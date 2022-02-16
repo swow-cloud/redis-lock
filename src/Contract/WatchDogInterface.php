@@ -15,8 +15,7 @@ interface WatchDogInterface
      * Return true if the task completed successfully
      *
      * @param \SwowCloud\RedisLock\Contract\LockInterface $lock
-     *
      * @throws \Throwable
      */
-    public function sentinel(LockInterface $lock): bool;
+    public function sentinel(LockInterface $lock, int $time = 60): bool;
 }

@@ -43,6 +43,11 @@ class RedisLock implements LockInterface
 
     private StdoutLoggerInterface $logger;
 
+    /**
+     * redis lock config.
+     */
+    private array $config;
+
     public function __construct(ContainerInterface $container)
     {
         $this->container = $container;
@@ -52,7 +57,8 @@ class RedisLock implements LockInterface
         if (!$config = $this->container->get(ConfigInterface::class)->get('redis_lock')) {
             throw new InvalidArgumentException('redis lock configuration not found#');
         }
-        $this->pool = $config['pool'] ?? 'default';
+        $this->config = $config;
+        $this->pool = $this->config['pool'] ?? 'default';
         $this->logger = $this->container->get(StdoutLoggerInterface::class);
     }
 
@@ -182,7 +188,7 @@ LUA;
                 $this->logger->debug(sprintf('coroutine[%s] successfully hold lock[uuid:%s,key:%s], initialize the watchdog', Coroutine::getCurrent()->getId(), $this->value, $this->key));
                 SwowCo::create(function () {
                     $watchdog = make(WatchDog::class);
-                    $watchdog->sentinel($this);
+                    $watchdog->sentinel($this, $this->config['watchDogTime'] ?? 60);
                 });
             }
 
