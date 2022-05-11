@@ -1,8 +1,10 @@
 <?php
 /**
  * This file is part of SwowCloud
- * @license  https://github.com/swow-cloud/music-server/blob/main/LICENSE
+ * @license  https://github.com/swow-cloud/websocket-server/blob/main/LICENSE
  */
+
+/* @noinspection PhpMemberCanBePulledUpInspection */
 
 declare(strict_types=1);
 
@@ -75,7 +77,7 @@ class RedisLock implements LockInterface
         $retryTimes = max($retries, 1);
         while ($retryTimes-- > 0) {
             $this->value = Uuid::uuid4()->toString();
-            $lock = (bool) $this->doLock($key, $ttl);
+            $lock = $this->doLock($key, $ttl);
             if ($lock) {
                 break;
             }
