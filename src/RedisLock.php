@@ -1,6 +1,7 @@
 <?php
 /**
  * This file is part of SwowCloud
+ *
  * @license  https://github.com/swow-cloud/websocket-server/blob/main/LICENSE
  */
 
@@ -11,14 +12,16 @@ declare(strict_types=1);
 namespace SwowCloud\RedisLock;
 
 use Hyperf\Contract\ConfigInterface;
+use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\Engine\Coroutine as SwowCo;
+use Hyperf\Redis\Redis;
+use Hyperf\Redis\RedisFactory;
 use InvalidArgumentException;
+use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface;
+use Psr\Container\NotFoundExceptionInterface;
 use Ramsey\Uuid\Uuid;
 use Swow\Coroutine;
-use SwowCloud\Contract\StdoutLoggerInterface;
-use SwowCloud\Redis\Redis;
-use SwowCloud\Redis\RedisFactory;
 use SwowCloud\RedisLock\Contract\LockInterface;
 use Throwable;
 
@@ -50,6 +53,12 @@ class RedisLock implements LockInterface
      */
     private array $config;
 
+    /**
+     * @param ContainerInterface $container
+     *
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     */
     public function __construct(ContainerInterface $container)
     {
         $this->container = $container;
@@ -82,7 +91,9 @@ class RedisLock implements LockInterface
                 break;
             }
             usleep($usleep);
-            $this->logger->debug(sprintf('Try to acquire the lock again, the number of attempts: %s,Key: %s', $retryTimes, $key));
+            $this->logger->debug(
+                sprintf('Try to acquire the lock again, the number of attempts: %s,Key: %s', $retryTimes, $key)
+            );
         }
 
         return $lock;
@@ -94,7 +105,7 @@ class RedisLock implements LockInterface
             local key = KEYS[1]
             local value = ARGV[1]
 
-            if (redis.call('exists', key) == 1 and redis.call('get', key) == value) 
+            if (redis.call('exists', key) == 1 and redis.call('get', key) == value)
             then
                 return redis.call('del', key)
             end
@@ -102,7 +113,7 @@ class RedisLock implements LockInterface
             return 0
 LUA;
 
-        return (bool) $this->execLuaScript($script, [$this->key, $this->value], 1);
+        return (bool)$this->execLuaScript($script, [$this->key, $this->value], 1);
     }
 
     public function lockTtl(): int
@@ -118,17 +129,17 @@ LUA;
         $script = <<<'LUA'
                 -- get the remaining life time of the key
                 local leftoverTtl = redis.call("TTL", KEYS[1]);
-                
+
                 -- never expired key
                 if (leftoverTtl == -1) then
                     return -1;
                 end;
-                
+
                 -- key with remaining time
                 if (leftoverTtl ~= -2) then
                     return redis.call("EXPIRE", KEYS[1], ARGV[1]);
                 end;
-                
+
                 -- key that does not exist
                 return -2;
 LUA;
@@ -165,6 +176,9 @@ LUA;
     /**
      * @param $key
      * @param $ttl
+     *
+     * @return bool
+     * @throws Throwable
      */
     protected function doLock($key, $ttl): bool
     {
@@ -178,7 +192,7 @@ LUA;
             elseif (redis.call('ttl', key) == -1) then
                 return redis.call('expire', key, ttl)
             end
-            
+
             return 0
 LUA;
         $this->ttl = $ttl;
@@ -187,20 +201,32 @@ LUA;
         try {
             $result = $this->execLuaScript($script, [$key, $this->value, $ttl], 1);
             if ($result) {
-                $this->logger->debug(sprintf('coroutine[%s] successfully hold lock[uuid:%s,key:%s], initialize the watchdog', Coroutine::getCurrent()->getId(), $this->value, $this->key));
+                $this->logger->debug(
+                    sprintf(
+                        'coroutine[%s] successfully hold lock[uuid:%s,key:%s], initialize the watchdog',
+                        Coroutine::getCurrent()->getId(),
+                        $this->value,
+                        $this->key
+                    )
+                );
                 SwowCo::create(function () {
                     $watchdog = make(WatchDog::class);
                     $watchdog->sentinel($this, $this->config['watchDogTime'] ?? 60);
                 });
             }
 
-            return (bool) $result;
+            return (bool)$result;
         } catch (Throwable $exception) {
             $this->logger->error(format_throwable($exception));
             throw $exception;
         }
     }
 
+    /**
+     * @throws ContainerExceptionInterface
+     * @throws Throwable
+     * @throws NotFoundExceptionInterface
+     */
     protected function getConnection(): Redis
     {
         try {
@@ -211,6 +237,17 @@ LUA;
         }
     }
 
+    /**
+     * @param string $script
+     * @param array  $args
+     * @param int    $number
+     *
+     * @return mixed
+     * @throws ContainerExceptionInterface
+     * @throws NotFoundExceptionInterface
+     * @throws Throwable
+     * @throws \RedisException
+     */
     private function execLuaScript(string $script, array $args, int $number = 0): mixed
     {
         $redis = $this->getConnection();

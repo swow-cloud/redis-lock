@@ -14,7 +14,7 @@ interface WatchDogInterface
      * watchdog sentinel automatic renewal mechanism
      * Return true if the task completed successfully
      *
-     * @param \SwowCloud\RedisLock\Contract\LockInterface $lock
+     * @param LockInterface $lock
      * @throws \Throwable
      */
     public function sentinel(LockInterface $lock, int $time = 60): bool;
